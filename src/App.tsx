@@ -1,5 +1,6 @@
 import { useSyncExternalStore } from 'react'
 import { DialogHost, ToastHost } from './components/Dialog'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { UpdatePrompt } from './components/UpdatePrompt'
 import { useSession } from './components/SyncStatus'
 import { hasSkippedLogin, subscribeAuth } from './lib/auth'
@@ -26,7 +27,7 @@ export function App() {
   return (
     <>
       <UpdatePrompt />
-      {screen}
+      <ErrorBoundary key={route.name}>{screen}</ErrorBoundary>
       <DialogHost />
       <ToastHost />
     </>

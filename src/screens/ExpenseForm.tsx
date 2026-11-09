@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useMemo, useState } from 'react'
 import { confirmDialog, toast } from '../components/Dialog'
 import { Header } from '../components/Header'
@@ -6,6 +5,7 @@ import { buildShares, dayKey, formatMoney, minorToInput, parseAmount, splitEqual
 import { db } from '../lib/db'
 import { deleteExpense, saveExpense } from '../lib/repo'
 import type { Expense } from '../lib/types'
+import { useLocalQuery } from '../lib/useLocalQuery'
 import { memberName, useTrip } from '../lib/useTrip'
 import { goBack } from '../router'
 
@@ -21,7 +21,7 @@ function dateToSpentAt(day: string, previous?: string): string {
 
 export function ExpenseForm({ tripId, expenseId }: { tripId: string; expenseId: string | null }) {
   const data = useTrip(tripId)
-  const existing = useLiveQuery(
+  const existing = useLocalQuery(
     async () => (expenseId ? ((await db.expenses.get(expenseId)) ?? null) : null),
     [expenseId],
   )

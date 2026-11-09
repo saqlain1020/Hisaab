@@ -1,4 +1,3 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useState } from 'react'
 import { confirmDialog } from '../components/Dialog'
 import { Header } from '../components/Header'
@@ -9,6 +8,7 @@ import { formatMoney } from '../lib/calc'
 import { db } from '../lib/db'
 import { ValidationError, createTrip } from '../lib/repo'
 import { countDirty } from '../lib/sync'
+import { useLocalQuery } from '../lib/useLocalQuery'
 import { navigate } from '../router'
 
 export function TripsList() {
@@ -18,7 +18,7 @@ export function TripsList() {
   const [currency, setCurrency] = useState('PKR')
   const [error, setError] = useState<string | null>(null)
 
-  const trips = useLiveQuery(async () => {
+  const trips = useLocalQuery(async () => {
     const [trips, expenses] = await Promise.all([db.trips.toArray(), db.expenses.toArray()])
     return trips
       .filter((t) => !t.deleted)
@@ -113,6 +113,8 @@ export function TripsList() {
             <PlusIcon /> New trip
           </button>
         )}
+
+        {trips === undefined && <p className="muted center">Loading trips…</p>}
 
         {trips && trips.length === 0 && !creating && (
           <div className="empty">

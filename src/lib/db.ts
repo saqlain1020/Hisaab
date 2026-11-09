@@ -14,7 +14,9 @@ export class HisaabDB extends Dexie {
   meta!: EntityTable<Meta, 'key'>
 
   constructor(name = 'hisaab') {
-    super(name)
+    // No shared query cache: a retry after a stuck read (see useLocalQuery) must
+    // issue a fresh IndexedDB request instead of joining the stuck one.
+    super(name, { cache: 'disabled' })
     this.version(1).stores({
       trips: 'id, dirty',
       members: 'id, trip_id, dirty',

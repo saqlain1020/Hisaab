@@ -1,9 +1,9 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { useEffect, useState, useSyncExternalStore } from 'react'
 import { getSession, subscribeAuth } from '../lib/auth'
 import { isConfigured } from '../lib/config'
 import { db } from '../lib/db'
 import { countDirty } from '../lib/sync'
+import { useLocalQuery } from '../lib/useLocalQuery'
 import { getSyncState, subscribeSync, syncNow } from '../lib/syncEngine'
 import { navigate } from '../router'
 import { AlertIcon, CheckIcon, CloudIcon, UploadIcon } from './Icons'
@@ -31,7 +31,7 @@ export function SyncStatus() {
   const sync = useSyncExternalStore(subscribeSync, getSyncState)
   const session = useSession()
   const online = useOnline()
-  const pending = useLiveQuery(() => countDirty(db), [], 0)
+  const pending = useLocalQuery(() => countDirty(db)) ?? 0
 
   let icon = <CheckIcon size={16} />
   let label = 'Synced'

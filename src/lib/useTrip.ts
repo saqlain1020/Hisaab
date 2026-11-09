@@ -1,6 +1,6 @@
-import { useLiveQuery } from 'dexie-react-hooks'
 import { db } from './db'
 import type { Expense, Member, Settlement, Trip } from './types'
+import { useLocalQuery } from './useLocalQuery'
 
 export interface TripData {
   trip: Trip | null
@@ -13,7 +13,7 @@ export interface TripData {
 
 /** Everything for one trip, live from Dexie. undefined while loading. */
 export function useTrip(tripId: string): TripData | undefined {
-  return useLiveQuery(async () => {
+  return useLocalQuery(async () => {
     const [trip, allMembers, expenses, settlements] = await Promise.all([
       db.trips.get(tripId),
       db.members.where('trip_id').equals(tripId).toArray(),
