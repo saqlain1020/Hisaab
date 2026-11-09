@@ -38,6 +38,7 @@ export type Route =
   | { name: 'trip'; tripId: string; tab: 'balances' | 'expenses' | 'settle' }
   | { name: 'friends'; tripId: string }
   | { name: 'expense'; tripId: string; expenseId: string | null }
+  | { name: 'quick'; tripId: string }
   | { name: 'notfound' }
 
 export function parseRoute(path: string): Route {
@@ -50,6 +51,7 @@ export function parseRoute(path: string): Route {
     if (p[2] === 'expenses' || p[2] === 'settle') return { name: 'trip', tripId, tab: p[2] }
     if (p[2] === 'friends') return { name: 'friends', tripId }
     if (p[2] === 'new') return { name: 'expense', tripId, expenseId: null }
+    if (p[2] === 'quick') return { name: 'quick', tripId }
     if (p[2] === 'e' && p[3]) return { name: 'expense', tripId, expenseId: p[3] }
   }
   return { name: 'notfound' }

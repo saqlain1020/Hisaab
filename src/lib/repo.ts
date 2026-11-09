@@ -118,6 +118,8 @@ export async function saveExpense(tripId: string, id: string | null, input: Expe
   const finalId = id ?? uuid()
   await db.transaction('rw', db.expenses, async () => {
     const prev = id ? await db.expenses.get(id) : undefined
+    // Another phone deleted it while this form was open: don't bring it back.
+    if (prev?.deleted) throw new ValidationError('This expense was deleted on another phone, so it can’t be saved.')
     const row: Expense = {
       id: finalId,
       trip_id: tripId,
@@ -172,4 +174,33 @@ export async function undoSettlement(id: string) {
     await db.settlements.put({ ...s, deleted: true, updated_at: nextStamp(s.updated_at), dirty: 1 })
   })
   changed(null)
+}
+
+/** Save several expenses at once (Quick add: one per friend who paid). */
+export async function saveQuickExpenses(
+  tripId: string,
+  common: { title: string; spent_at: string; notes: string },
+  items: { paid_by: string; amount_minor: number; shares: Share[] }[],
+): Promise<number> {
+  const title = common.title.trim()
+  if (!title) throw new ValidationError('Enter what it was for.')
+  if (items.length === 0) throw new ValidationError('Enter how much at least one friend paid.')
+  for (const it of items)
+    if (it.amount_minor <= 0 || it.shares.reduce((t, s) => t + s.amount_minor, 0) !== it.amount_minor)
+      throw new ValidationError('Shares must add up to the amount.')
+  const rows: Expense[] = items.map((it) => ({
+    id: uuid(),
+    trip_id: tripId,
+    title,
+    amount_minor: it.amount_minor,
+    paid_by: it.paid_by,
+    spent_at: common.spent_at,
+    notes: common.notes.trim(),
+    shares: it.shares,
+    updated_at: nextStamp(),
+    deleted: false,
+    dirty: 1,
+  }))
+  await db.expenses.bulkAdd(rows)
+  return changed(rows.length)
 }

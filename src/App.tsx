@@ -8,6 +8,7 @@ import { parseRoute, useRoute } from './router'
 import { ExpenseForm } from './screens/ExpenseForm'
 import { Friends } from './screens/Friends'
 import { Login } from './screens/Login'
+import { QuickAdd } from './screens/QuickAdd'
 import { TripScreen } from './screens/TripScreen'
 import { TripsList } from './screens/TripsList'
 
@@ -22,6 +23,7 @@ export function App() {
   else if (route.name === 'trip') screen = <TripScreen tripId={route.tripId} tab={route.tab} />
   else if (route.name === 'friends') screen = <Friends tripId={route.tripId} />
   else if (route.name === 'expense') screen = <ExpenseForm tripId={route.tripId} expenseId={route.expenseId} />
+  else if (route.name === 'quick') screen = <QuickAdd tripId={route.tripId} />
   else screen = <TripsList />
 
   return (

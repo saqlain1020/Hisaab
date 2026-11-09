@@ -94,7 +94,10 @@ async function tokenRequest(grant: 'password' | 'refresh_token', body: object): 
   return {
     access_token: data.access_token,
     refresh_token: data.refresh_token,
-    expires_at: data.expires_at ?? Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600),
+    // Use the relative lifetime on this phone's own clock: Supabase's absolute
+    // expires_at is server time, and a phone whose clock is behind would never
+    // think the token had expired.
+    expires_at: Math.floor(Date.now() / 1000) + (data.expires_in ?? 3600),
     user: { id: data.user.id, email: data.user.email },
   }
 }
@@ -129,6 +132,16 @@ export async function getAccessToken(): Promise<string | null> {
   const s = current
   if (!s) return null
   if (s.expires_at - 60 > Date.now() / 1000) return s.access_token
+  return refreshAccessToken()
+}
+
+/**
+ * Refresh now, regardless of the stored expiry. Used when the server rejects a
+ * token we believed was valid (401), e.g. after a clock change.
+ */
+export async function refreshAccessToken(): Promise<string | null> {
+  const s = current
+  if (!s) return null
   if (!refreshing) {
     refreshing = tokenRequest('refresh_token', { refresh_token: s.refresh_token })
       .then((next) => {

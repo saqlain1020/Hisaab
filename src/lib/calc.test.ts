@@ -9,6 +9,8 @@ import {
   suggestTransfers,
   sumShares,
   validatePayment,
+  parseSum,
+  buildQuickExpenses,
 } from './calc'
 import { nextStamp } from './db'
 import type { Expense, Member, Settlement } from './types'
@@ -197,9 +199,11 @@ describe('buildShares', () => {
     expect(r.errors[0]).toMatch(/add up/)
     const ok = buildShares({ ...draft, mode: 'custom', custom: { a: 500, b: 500, c: 0 } })
     expect(ok.errors).toEqual([])
+    // c was ticked with 0: still included (so editing keeps them ticked), owes nothing.
     expect(ok.shares).toEqual([
       { member_id: 'a', amount_minor: 500 },
       { member_id: 'b', amount_minor: 500 },
+      { member_id: 'c', amount_minor: 0 },
     ])
   })
 
@@ -268,5 +272,56 @@ describe('validatePayment', () => {
     expect(validatePayment({ ...ok, amount_minor: null })).toHaveLength(1)
     expect(validatePayment({ ...ok, to: 'a' })).toEqual(['Someone can’t pay themselves.'])
     expect(validatePayment({ from: null, to: null, amount_minor: 5 })).toHaveLength(2)
+  })
+})
+
+describe('parseSum', () => {
+  it('adds up amounts typed with +', () => {
+    expect(parseSum('500+250.50 + 100')).toBe(85050)
+    expect(parseSum('1,000+500')).toBe(150000)
+    expect(parseSum('300')).toBe(30000)
+  })
+  it('treats empty as 0 and ignores a trailing + while typing', () => {
+    expect(parseSum('')).toBe(0)
+    expect(parseSum('  ')).toBe(0)
+    expect(parseSum('500+')).toBe(50000)
+  })
+  it('rejects junk parts', () => {
+    expect(parseSum('500+abc')).toBeNull()
+    expect(parseSum('500++100')).toBeNull()
+    expect(parseSum('1.234+1')).toBeNull()
+  })
+})
+
+describe('buildQuickExpenses', () => {
+  it('makes one expense per payer, split between the chosen friends only', () => {
+    const out = buildQuickExpenses(
+      [
+        { member_id: 'ali', amount_minor: 300000 },
+        { member_id: 'bilal', amount_minor: 0 },
+        { member_id: 'sara', amount_minor: 90000 },
+      ],
+      ['ali', 'bilal'], // Sara paid but is not part of the split
+    )
+    expect(out.map((e) => e.paid_by)).toEqual(['ali', 'sara'])
+    expect(out[0].shares).toEqual([{ member_id: 'ali', amount_minor: 150000 }, { member_id: 'bilal', amount_minor: 150000 }])
+    expect(out[1].shares).toEqual([{ member_id: 'ali', amount_minor: 45000 }, { member_id: 'bilal', amount_minor: 45000 }])
+    const members = ['ali', 'bilal', 'sara'].map((id) => member(id))
+    const expenses = out.map((e, i) => ({ ...expense(`q${i}`, e.paid_by, e.amount_minor, []), shares: e.shares }))
+    expect(bal(computeBalances(members, expenses, []))).toEqual({ ali: 105000, bilal: -195000, sara: 90000 })
+  })
+
+  it('every expense adds up exactly and rounding units are spread out', () => {
+    const out = buildQuickExpenses(
+      ['a', 'b', 'c'].map((id) => ({ member_id: id, amount_minor: 100 })),
+      ['a', 'b', 'c'],
+    )
+    for (const e of out) expect(sumShares(e.shares)).toBe(e.amount_minor)
+    const totals = Object.fromEntries(['a', 'b', 'c'].map((id) => [id, out.reduce((t, e) => t + e.shares.find((s) => s.member_id === id)!.amount_minor, 0)]))
+    expect(totals).toEqual({ a: 100, b: 100, c: 100 }) // not 102 / 99 / 99
+  })
+
+  it('returns nothing when nobody is chosen to split', () => {
+    expect(buildQuickExpenses([{ member_id: 'a', amount_minor: 100 }], [])).toEqual([])
   })
 })

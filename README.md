@@ -89,6 +89,15 @@ Do this **before the trip, while online.** Open the link once so the app downloa
 
 After that, the app opens and works with no signal. Expenses you add offline show as "N to upload" in the header and sync the next time the app is open and online.
 
+## Quick add (several people paid)
+
+On a trip, tap **Quick add** (above **Add expense**) to record a whole round of spending at once:
+
+1. Enter what it was for and the date.
+2. Next to each friend, type what they paid. Tap **+** to add another amount for the same person (e.g. `500+300`). The running total shows underneath.
+3. Tick who it should be split between. Everyone is ticked by default, and people who paid don't have to be included.
+4. Save. Hisaab creates one expense per friend who paid, each split equally between the ticked friends, and spreads rounding units fairly.
+
 ## Settling up
 
 - **Suggested payments** show the fewest transfers that settle everyone. Tap **Mark paid** to record one. The amount starts at the full figure, and you can lower it to record a partial payment (for example 400 of 1,000). The suggestion then drops to what's left. Recording more than is owed is rejected.

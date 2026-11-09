@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react'
 import { confirmDialog, promptDialog, toast } from '../components/Dialog'
 import { Header } from '../components/Header'
+import { LoadingScreen } from '../components/Loading'
 import { MoreIcon, PlusIcon, ShareIcon, UsersIcon } from '../components/Icons'
 import { PaymentDialog, type PaymentRequest } from '../components/PaymentDialog'
 import { SyncStatus } from '../components/SyncStatus'
@@ -23,6 +24,7 @@ type Tab = 'balances' | 'expenses' | 'settle'
 export function TripScreen({ tripId, tab }: { tripId: string; tab: Tab }) {
   const data = useTrip(tripId)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [copyText, setCopyText] = useState<string | null>(null)
 
   const balances = useMemo(
     () => (data ? computeBalances(data.allMembers, data.expenses, data.settlements) : []),
@@ -30,7 +32,7 @@ export function TripScreen({ tripId, tab }: { tripId: string; tab: Tab }) {
   )
   const transfers = useMemo(() => suggestTransfers(balances), [balances])
 
-  if (data === undefined) return null
+  if (data === undefined) return <LoadingScreen onBack={() => goBack('/')} />
   if (!data.trip) return <TripGone />
   const trip = data.trip
 
@@ -64,19 +66,23 @@ export function TripScreen({ tripId, tab }: { tripId: string; tab: Tab }) {
 
   const share = async () => {
     const text = summaryText(trip, data, balances, transfers)
-    try {
-      if (navigator.share) {
+    if (navigator.share) {
+      try {
         await navigator.share({ title: `Hisaab — ${trip.name}`, text })
-        return
+      } catch (err) {
+        // Cancelled by the user: nothing to do. Any other failure: the tap that
+        // started this has been used up, so Safari would refuse a clipboard
+        // write now. Show the text with its own Copy button (a fresh tap).
+        if ((err as Error).name !== 'AbortError') setCopyText(text)
       }
-    } catch (err) {
-      if ((err as Error).name === 'AbortError') return
+      return
     }
+    // No share sheet: copy directly, still inside the original tap.
     try {
       await navigator.clipboard.writeText(text)
       toast('Summary copied')
     } catch {
-      toast("Couldn't share or copy on this device")
+      setCopyText(text)
     }
   }
 
@@ -135,12 +141,46 @@ export function TripScreen({ tripId, tab }: { tripId: string; tab: Tab }) {
         {tab === 'expenses' && <Expenses trip={trip} data={data} />}
         {tab === 'settle' && <SettleUp trip={trip} data={data} transfers={transfers} />}
       </main>
+      {copyText !== null && <CopyDialog text={copyText} onClose={() => setCopyText(null)} />}
       {tab !== 'settle' && data.members.length > 0 && (
-        <button className="fab" onClick={() => navigate(`/t/${tripId}/new`)}>
-          <PlusIcon /> Add expense
-        </button>
+        <div className="fab-stack">
+          <button className="fab secondary" onClick={() => navigate(`/t/${tripId}/quick`)}>
+            <UsersIcon size={20} /> Quick add
+          </button>
+          <button className="fab" onClick={() => navigate(`/t/${tripId}/new`)}>
+            <PlusIcon /> Add expense
+          </button>
+        </div>
       )}
     </>
+  )
+}
+
+function CopyDialog({ text, onClose }: { text: string; onClose: () => void }) {
+  const copy = async () => {
+    try {
+      await navigator.clipboard.writeText(text)
+      toast('Summary copied')
+      onClose()
+    } catch {
+      toast('Select the text and copy it')
+    }
+  }
+  return (
+    <div className="dialog-backdrop" onClick={onClose}>
+      <div className="dialog" role="dialog" aria-modal="true" aria-labelledby="copy-title" onClick={(e) => e.stopPropagation()}>
+        <h2 id="copy-title">Trip summary</h2>
+        <textarea readOnly rows={10} value={text} onFocus={(e) => e.currentTarget.select()} />
+        <div className="dialog-actions">
+          <button type="button" className="btn ghost" onClick={onClose}>
+            Close
+          </button>
+          <button type="button" className="btn primary" onClick={copy}>
+            Copy
+          </button>
+        </div>
+      </div>
+    </div>
   )
 }
 

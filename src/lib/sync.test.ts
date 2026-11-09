@@ -17,7 +17,7 @@ function fakeServer() {
     settlements: new Map(),
   }
   let clock = Date.parse('2026-01-01T00:00:00Z')
-  const tick = () => new Date((clock += 1000)).toISOString().replace('Z', '123+00:00') // microsecond-style
+  const tick = () => new Date(frozen ? clock : (clock += 1000)).toISOString().replace('Z', '123+00:00') // microsecond-style
   const requests: string[] = []
 
   const fetchFn = (async (input: RequestInfo | URL, init?: RequestInit) => {
@@ -26,12 +26,19 @@ function fakeServer() {
     const table = tables[name]
     requests.push(`${init?.method ?? 'GET'} ${name}`)
     if (init?.method === 'POST') {
-      for (const row of JSON.parse(String(init.body)) as Record<string, unknown>[]) {
+      const body = JSON.parse(String(init.body)) as Record<string, unknown>[]
+      // Like a CHECK/FK violation: the whole statement fails, nothing is written.
+      if (body.some((r) => r.name === 'BAD')) return new Response(JSON.stringify({ message: 'bad row' }), { status: 400 })
+      const written: Record<string, unknown>[] = []
+      for (const row of body) {
         const old = table.get(row.id as string)
         if (old && Date.parse(row.updated_at as string) < Date.parse(old.updated_at as string)) continue
-        table.set(row.id as string, { ...old, ...row, server_updated_at: tick() })
+        const next = { ...old, ...row, server_updated_at: tick() }
+        table.set(row.id as string, next)
+        written.push(next)
       }
-      return new Response(null, { status: 201 })
+      const representation = String(new Headers(init.headers).get('Prefer')).includes('return=representation')
+      return new Response(representation ? JSON.stringify(written) : null, { status: 201 })
     }
     let rows = [...table.values()]
     const gt = url.searchParams.get('server_updated_at')
@@ -39,20 +46,33 @@ function fakeServer() {
       const since = Date.parse(gt.slice(3).replace(/(\.\d{3})\d+/, '$1'))
       rows = rows.filter((r) => Date.parse((r.server_updated_at as string).replace(/(\.\d{3})\d+/, '$1')) > since)
     }
+    const or = url.searchParams.get('or')
+    if (or) {
+      const m = /server_updated_at\.gt\."([^"]+)",and\(server_updated_at\.eq\."[^"]+",id\.gt\.([^)]+)\)/.exec(or)!
+      rows = rows.filter((r) => {
+        const ts = r.server_updated_at as string
+        return ts > m[1] || (ts === m[1] && (r.id as string) > m[2])
+      })
+    }
     const ids = url.searchParams.get('id')
     if (ids) {
       const set = new Set(ids.slice(4, -1).split(','))
       rows = rows.filter((r) => set.has(r.id as string))
     }
-    rows.sort((a, b) => String(a.server_updated_at).localeCompare(String(b.server_updated_at)))
+    rows.sort((a, b) => String(a.server_updated_at).localeCompare(String(b.server_updated_at)) || String(a.id).localeCompare(String(b.id)))
     const limit = Number(url.searchParams.get('limit') ?? 1e9)
     return new Response(JSON.stringify(rows.slice(0, limit)), { status: 200 })
   }) as typeof fetch
 
+  /** Make the next writes share one timestamp, like a fast bulk insert. */
+  let frozen = false
+  const freeze = (on: boolean) => {
+    frozen = on
+  }
   const advance = (ms: number) => {
     clock += ms
   }
-  return { tables, fetch: fetchFn, requests, advance }
+  return { tables, fetch: fetchFn, requests, advance, freeze }
 }
 
 let n = 0
@@ -93,7 +113,7 @@ describe('sync engine', () => {
   it('pushes in chunks', async () => {
     const a = phone(server, { pushChunk: 2 })
     await a.db.trips.bulkAdd([trip('t1'), trip('t2'), trip('t3'), trip('t4'), trip('t5')])
-    expect(await push(a.ctx)).toBe(5)
+    expect((await push(a.ctx)).pushed).toBe(5)
     expect(server.requests.filter((r) => r === 'POST trips')).toHaveLength(3)
   })
 
@@ -130,6 +150,18 @@ describe('sync engine', () => {
     // Re-reading the 60 s window again is harmless.
     await pull(b.ctx)
     expect(await b.db.members.count()).toBe(3)
+  })
+
+  it('does not skip rows that share a timestamp across a page boundary', async () => {
+    const a = phone(server)
+    const b = phone(server, { pageSize: 3 })
+    await a.db.trips.add(trip('trip1'))
+    await a.db.members.bulkAdd(Array.from({ length: 10 }, (_, i) => member(`m${i}`, `Friend ${i}`)))
+    server.freeze(true) // all 10 members get the same server_updated_at
+    await push(a.ctx)
+    server.freeze(false)
+    await pull(b.ctx)
+    expect(await b.db.members.count()).toBe(10)
   })
 
   it('does not overwrite rows that are dirty locally', async () => {
@@ -197,6 +229,46 @@ describe('sync engine', () => {
     await push(a.ctx)
     await pull(b.ctx)
     expect((await b.db.expenses.get('e1'))!.deleted).toBe(true)
+  })
+
+  it('only re-reads rows the server ignored', async () => {
+    const a = phone(server)
+    await a.db.trips.add(trip('trip1'))
+    await push(a.ctx)
+    expect(server.requests.filter((r) => r === 'GET trips')).toHaveLength(0) // nothing ignored → no extra GET
+  })
+
+  it('a rejected row does not block the rest of the upload', async () => {
+    const a = phone(server, { pushChunk: 10 })
+    await a.db.trips.add(trip('trip1'))
+    await a.db.members.bulkAdd([member('m1', 'Ali'), member('m2', 'BAD'), member('m3', 'Sara')])
+    const e: Expense = {
+      id: 'e1', trip_id: 'trip1', title: 'Tea', amount_minor: 100, paid_by: 'm1', spent_at: t0, notes: '',
+      shares: [{ member_id: 'm1', amount_minor: 100 }], updated_at: t0, deleted: false, dirty: 1,
+    }
+    await a.db.expenses.add(e)
+    const result = await push(a.ctx)
+    expect(result.failed).toEqual([{ table: 'members', id: 'm2', message: 'bad row' }])
+    expect([...server.tables.members.keys()].sort()).toEqual(['m1', 'm3'])
+    expect(server.tables.expenses.has('e1')).toBe(true) // later tables still upload
+    expect((await a.db.members.get('m2'))!.dirty).toBe(1) // kept for retry
+    expect(await countDirty(a.db)).toBe(1)
+  })
+
+  it('refreshes the token and retries once after a 401', async () => {
+    let token = 'expired'
+    const a = phone(server, {
+      getToken: async () => token,
+      refreshToken: async () => (token = 'fresh'),
+      fetch: (async (input, init) => {
+        const auth = new Headers(init?.headers).get('Authorization')
+        if (auth === 'Bearer expired') return new Response(JSON.stringify({ message: 'JWT expired' }), { status: 401 })
+        return server.fetch(input, init)
+      }) as typeof fetch,
+    })
+    await a.db.trips.add(trip('trip1'))
+    expect((await push(a.ctx)).pushed).toBe(1)
+    expect(token).toBe('fresh')
   })
 
   it('surfaces server errors and leaves rows dirty', async () => {

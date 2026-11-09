@@ -190,8 +190,7 @@ export function buildShares(d: ExpenseDraft): { errors: string[]; shares: Share[
         errors.push(
           `Custom amounts add up to ${formatMoney(total)}, but the expense is ${formatMoney(d.amount_minor)}.`,
         )
-      shares = shares.filter((s) => s.amount_minor > 0)
-      if (!missing && total === d.amount_minor && shares.length === 0) errors.push('Someone must have a share.')
+      // People ticked with 0 stay on the expense: they were included, they just owe nothing for it.
     }
   }
   return { errors, shares }
@@ -201,6 +200,17 @@ export function buildShares(d: ExpenseDraft): { errors: string[]; shares: Share[
 export function dayKey(iso: string): string {
   const d = new Date(iso)
   return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+/** Today's local day key, for date inputs. */
+export const today = () => dayKey(new Date().toISOString())
+
+/** Date input value → stored timestamp. Today uses "now" so same-day items keep their order; other days use local noon. */
+export function dateToSpentAt(day: string, previous?: string): string {
+  if (previous && dayKey(previous) === day) return previous
+  if (day === today()) return new Date().toISOString()
+  const [y, m, d] = day.split('-').map(Number)
+  return new Date(y, m - 1, d, 12).toISOString()
 }
 
 export function dayLabel(key: string, now = new Date()): string {
@@ -233,4 +243,49 @@ export function groupByDay(expenses: Expense[]): { key: string; total: number; i
     items,
     total: items.reduce((t, e) => t + e.amount_minor, 0),
   }))
+}
+
+/**
+ * Parse an amount that may be a running sum: "500+250.50 + 100" → 85050.
+ * Empty input → 0. A trailing "+" (still typing) is ignored. Returns null if any part is invalid.
+ */
+export function parseSum(input: string): number | null {
+  const parts = input.split('+').map((p) => p.trim())
+  if (parts.length > 1 && parts[parts.length - 1] === '') parts.pop()
+  if (parts.length === 1 && parts[0] === '') return 0
+  let total = 0
+  for (const p of parts) {
+    const v = parseAmount(p)
+    if (v === null) return null
+    total += v
+  }
+  return Number.isSafeInteger(total) ? total : null
+}
+
+export interface QuickExpense {
+  paid_by: string
+  amount_minor: number
+  shares: Share[]
+}
+
+/**
+ * One expense per friend who paid, each split equally between `splitIds`.
+ * Leftover minor units rotate from expense to expense, so the same person
+ * doesn't absorb every rounding unit.
+ */
+export function buildQuickExpenses(payers: { member_id: string; amount_minor: number }[], splitIds: string[]): QuickExpense[] {
+  if (splitIds.length === 0) return []
+  return payers
+    .filter((p) => p.amount_minor > 0)
+    .map((p, i) => {
+      const offset = i % splitIds.length
+      const rotated = [...splitIds.slice(offset), ...splitIds.slice(0, offset)]
+      const byId = new Map(splitEqual(p.amount_minor, rotated).map((s) => [s.member_id, s.amount_minor]))
+      return {
+        paid_by: p.member_id,
+        amount_minor: p.amount_minor,
+        // Keep shares in the caller's order for a stable display.
+        shares: splitIds.map((id) => ({ member_id: id, amount_minor: byId.get(id)! })),
+      }
+    })
 }

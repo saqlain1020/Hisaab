@@ -39,6 +39,22 @@ export function nextStamp(previous?: string, now = Date.now()): string {
   return new Date(ms).toISOString()
 }
 
+/**
+ * When a sync write transaction started (null when none is running). Reads queue
+ * behind writes, so the stuck-read watchdog waits for these instead of reopening
+ * the database underneath them.
+ */
+let writeStartedAt: number | null = null
+export const syncWriteStartedAt = () => writeStartedAt
+export async function trackSyncWrite<T>(fn: () => Promise<T>): Promise<T> {
+  writeStartedAt = Date.now()
+  try {
+    return await fn()
+  } finally {
+    writeStartedAt = null
+  }
+}
+
 export async function getMeta<T>(key: string): Promise<T | undefined> {
   return (await db.meta.get(key))?.value as T | undefined
 }

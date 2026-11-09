@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState } from 'react'
 import { confirmDialog, toast } from '../components/Dialog'
 import { Header } from '../components/Header'
-import { buildShares, dayKey, formatMoney, minorToInput, parseAmount, splitEqual, sumShares } from '../lib/calc'
+import { LoadingScreen } from '../components/Loading'
+import { buildShares, dateToSpentAt, dayKey, formatMoney, minorToInput, parseAmount, splitEqual, sumShares, today } from '../lib/calc'
 import { db } from '../lib/db'
 import { deleteExpense, saveExpense } from '../lib/repo'
 import type { Expense } from '../lib/types'
@@ -9,23 +10,14 @@ import { useLocalQuery } from '../lib/useLocalQuery'
 import { memberName, useTrip } from '../lib/useTrip'
 import { goBack } from '../router'
 
-const today = () => dayKey(new Date().toISOString())
-
-/** Date input value → stored timestamp. Today uses "now" so same-day items keep their order; other days use local noon. */
-function dateToSpentAt(day: string, previous?: string): string {
-  if (previous && dayKey(previous) === day) return previous
-  if (day === today()) return new Date().toISOString()
-  const [y, m, d] = day.split('-').map(Number)
-  return new Date(y, m - 1, d, 12).toISOString()
-}
-
 export function ExpenseForm({ tripId, expenseId }: { tripId: string; expenseId: string | null }) {
   const data = useTrip(tripId)
   const existing = useLocalQuery(
     async () => (expenseId ? ((await db.expenses.get(expenseId)) ?? null) : null),
     [expenseId],
   )
-  if (!data || existing === undefined) return null
+  if (!data || existing === undefined)
+    return <LoadingScreen title={expenseId ? 'Edit expense' : 'Add expense'} onBack={() => goBack(`/t/${tripId}/expenses`)} />
   if (expenseId && (!existing || existing.deleted)) {
     return (
       <>
@@ -113,14 +105,19 @@ function Form({
       return
     }
     if (result.errors.length) return setErrors(result.errors)
-    await saveExpense(tripId, existing?.id ?? null, {
-      title,
-      amount_minor: amountMinor!,
-      paid_by: paidBy!,
-      spent_at: dateToSpentAt(day, existing?.spent_at),
-      notes,
-      shares: result.shares,
-    })
+    try {
+      await saveExpense(tripId, existing?.id ?? null, {
+        title,
+        amount_minor: amountMinor!,
+        paid_by: paidBy!,
+        spent_at: dateToSpentAt(day, existing?.spent_at),
+        notes,
+        shares: result.shares,
+      })
+    } catch (err) {
+      setErrors([err instanceof Error ? err.message : String(err)])
+      return
+    }
     toast(existing ? 'Expense updated' : 'Expense added')
     goBack(`/t/${tripId}/expenses`)
   }

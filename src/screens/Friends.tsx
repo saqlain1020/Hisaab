@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import { confirmDialog, promptDialog, toast } from '../components/Dialog'
 import { Header } from '../components/Header'
+import { LoadingScreen } from '../components/Loading'
 import { db } from '../lib/db'
 import { ValidationError, addMember, isMemberInvolved, removeMember, renameMember } from '../lib/repo'
 import type { Member } from '../lib/types'
@@ -12,7 +13,7 @@ export function Friends({ tripId }: { tripId: string }) {
   const [name, setName] = useState('')
   const [error, setError] = useState<string | null>(null)
 
-  if (!data) return null
+  if (!data) return <LoadingScreen title="Friends" onBack={() => goBack(`/t/${tripId}`)} />
   const back = () => goBack(`/t/${tripId}`)
 
   const add = async (e: React.FormEvent) => {

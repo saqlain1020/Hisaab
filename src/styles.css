@@ -162,6 +162,17 @@ p {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.loading {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+  padding: 48px 16px;
+}
+.spinner.dark {
+  border-color: var(--border);
+  border-top-color: var(--brand);
+}
 .spinner {
   width: 14px;
   height: 14px;
@@ -240,7 +251,7 @@ p {
   gap: 14px;
 }
 .page.with-fab {
-  padding-bottom: calc(var(--fab-bottom) + 76px + var(--safe-bottom));
+  padding-bottom: calc(var(--fab-bottom) + 132px + var(--safe-bottom));
 }
 .stack {
   display: flex;
@@ -352,11 +363,25 @@ p {
 .btn.ghost.danger-text {
   color: var(--neg);
 }
-.fab {
+.fab-stack {
   position: fixed;
   right: 16px;
   bottom: calc(var(--fab-bottom) + var(--safe-bottom));
   z-index: 5;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 10px;
+}
+.fab.secondary {
+  min-height: 46px;
+  background: var(--surface);
+  color: var(--brand-strong);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 14px rgb(0 0 0 / 0.18);
+  font-size: 0.95rem;
+}
+.fab {
   min-height: 56px;
   padding: 0 22px 0 18px;
   border-radius: 28px;
@@ -372,7 +397,7 @@ p {
   cursor: pointer;
 }
 @media (min-width: 672px) {
-  .fab {
+  .fab-stack {
     right: calc(50% - 320px + 16px);
   }
 }
@@ -531,6 +556,49 @@ textarea {
   min-height: 0;
   accent-color: var(--brand);
   margin: 0;
+}
+.payer-list li {
+  padding: 8px 8px 8px 14px;
+  gap: 8px;
+}
+.payer-name {
+  flex: 0 0 30%;
+  min-width: 0;
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.payer-input {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+}
+.payer-input input {
+  min-height: 44px;
+  text-align: right;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+.payer-input input.invalid {
+  outline: 2px solid var(--neg);
+  outline-offset: -1px;
+}
+.payer-sum {
+  font-size: 0.8rem;
+  font-weight: 700;
+  color: var(--pos);
+  text-align: right;
+  margin-top: 2px;
+}
+.plus-btn {
+  width: 44px;
+  min-height: 44px;
+  padding: 0;
+  font-size: 1.4rem;
+  flex-shrink: 0;
 }
 .share-input {
   width: 110px;
@@ -732,7 +800,7 @@ button.list-item:active {
   position: fixed;
   left: 0;
   right: 0;
-  bottom: calc(var(--fab-bottom) + 72px + var(--safe-bottom));
+  bottom: calc(var(--fab-bottom) + 128px + var(--safe-bottom));
   z-index: 60;
   display: flex;
   justify-content: center;

@@ -1,4 +1,4 @@
-import { AuthError, NetworkError, getAccessToken, getSession, subscribeAuth } from './auth'
+import { AuthError, NetworkError, getAccessToken, getSession, refreshAccessToken, subscribeAuth } from './auth'
 import { SUPABASE_ANON_KEY, SUPABASE_URL, isConfigured } from './config'
 import { db } from './db'
 import { setLocalChangeListener } from './repo'
@@ -26,10 +26,14 @@ export function subscribeSync(fn: () => void) {
 let running: Promise<void> | null = null
 let again = false
 
-/** Run one push+pull. Only one runs at a time; a request made mid-sync runs once more afterwards. */
-export function syncNow(): Promise<void> {
+/**
+ * Run one push+pull. Only one runs at a time. Triggers that arrive mid-sync
+ * just join it; only a local edit (`afterEdit`) queues one more run, since the
+ * running push may already have read the dirty rows.
+ */
+export function syncNow(opts: { afterEdit?: boolean } = {}): Promise<void> {
   if (running) {
-    again = true
+    if (opts.afterEdit) again = true
     return running
   }
   running = (async () => {
@@ -51,10 +55,22 @@ async function runOnce() {
   }
   set({ phase: 'syncing', error: null })
   try {
-    const ctx = { db, url: SUPABASE_URL, anonKey: SUPABASE_ANON_KEY, getToken: getAccessToken }
-    await push(ctx)
-    await pull(ctx)
-    set({ phase: 'idle', error: null, lastSyncedAt: Date.now() })
+    const ctx = {
+      db,
+      url: SUPABASE_URL,
+      anonKey: SUPABASE_ANON_KEY,
+      getToken: getAccessToken,
+      refreshToken: refreshAccessToken,
+    }
+    const { failed } = await push(ctx)
+    await pull(ctx) // still download even if some rows were rejected
+    if (failed.length) {
+      console.warn('[hisaab] rows the server rejected', failed)
+      const n = failed.length
+      set({ phase: 'error', error: `${n} change${n === 1 ? '' : 's'} couldn't upload: ${failed[0].message}` })
+    } else {
+      set({ phase: 'idle', error: null, lastSyncedAt: Date.now() })
+    }
   } catch (err) {
     if (err instanceof NetworkError || (err instanceof HttpError && err.status === 0)) {
       // Offline or flaky: not worth alarming anyone; the pending count still shows.
@@ -71,7 +87,7 @@ let debounce: ReturnType<typeof setTimeout> | undefined
 /** Sync 2 s after the last local edit. */
 export function scheduleSync(delay = 2000) {
   clearTimeout(debounce)
-  debounce = setTimeout(() => void syncNow(), delay)
+  debounce = setTimeout(() => void syncNow({ afterEdit: true }), delay)
 }
 
 async function registerBackgroundSync() {
